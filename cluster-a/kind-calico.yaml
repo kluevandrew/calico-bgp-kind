@@ -1,0 +1,21 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kind-a
+networking:
+  disableDefaultCNI: true
+  serviceSubnet: 10.101.0.0/16
+  podSubnet: 10.201.0.0/16
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        ---
+        apiVersion: kubeadm.k8s.io/v1beta3
+        kind: ClusterConfiguration
+        networking:
+          dnsDomain: "kind-a.cluster.local"
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: memory=4Gi,cpu=4

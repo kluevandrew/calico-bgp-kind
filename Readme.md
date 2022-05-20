@@ -1,0 +1,53 @@
+# Dev окружение для мультикластерного кубера
+
+- Прокидываем сети докера на хост (инструкция для MacOS)
+  - `brew install chipmk/tap/docker-mac-net-connect`
+  - `sudo brew services start chipmk/tap/docker-mac-net-connect`
+- Поднимаем кластер A
+  - `cd cluster-a/`
+  - `kind create cluster --config kind-calico.yaml`
+  - ждём пока поднимется
+  - `kubectl apply -f calico.yaml`
+  - `kubectl apply -f calico-adds.yaml`
+  - Ждём когда `kubectl get node` будет показывать что нода ready
+  - `kubectl apply -f dns.yaml`
+  - `kubectl -n kube-system rollout restart deployment coredns`
+  - Ждём когда `kubectl -n kube-system get pod` будет показывать что все поды ready
+  - `kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.12.1/manifests/namespace.yaml`
+  - `kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.12.1/manifests/metallb.yaml`
+  - `kubectl apply -f pool.yaml`
+  - `helm repo add devtron http://helm.devtron.ai/`
+  - `helm upgrade --install -n vpn --create-namespace openvpn devtron/openvpn --version 4.2.5 --values ./vpn-values.yaml`
+  - Ждём когда поднимутся все поды vpn `kubectl -n vpn get pod`
+  - Экспортируем настройки vpn:
+    - POD_NAME=$(kubectl get pods --namespace "vpn" -l "app=openvpn,release=openvpn" -o jsonpath='{ .items[0].metadata.name }')
+    - SERVICE_NAME=$(kubectl get svc --namespace "vpn" -l "app=openvpn,release=openvpn" -o jsonpath='{ .items[0].metadata.name }')
+    - SERVICE_IP=$(kubectl get svc --namespace "vpn" "$SERVICE_NAME" -o go-template='{{ range $k, $v := (index .status.loadBalancer.ingress 0)}}{{ $v }}{{end}}')
+    - KEY_NAME=kubeVPN-a
+    - kubectl --namespace "vpn" exec -it "$POD_NAME" -- /etc/openvpn/setup/newClientCert.sh "$KEY_NAME" "$SERVICE_IP"
+    - kubectl --namespace "vpn" exec -it "$POD_NAME" -- cat "/etc/openvpn/certs/pki/$KEY_NAME.ovpn" > "$KEY_NAME.ovpn"
+    - Подключаемся к vpn импортировав конфиг `kubeVPN-a.ovpn`
+- Поднимаем кластер B
+  - `cd cluster-a/`
+  - `kind create cluster --config kind-calico.yaml`
+  - ждём пока поднимется
+  - `kubectl apply -f calico.yaml`
+  - `kubectl apply -f calico-adds.yaml`
+  - Ждём когда `kubectl get node` будет показывать что нода ready
+  - `kubectl apply -f dns.yaml`
+  - `kubectl -n kube-system rollout restart deployment coredns`
+  - Ждём когда `kubectl -n kube-system get pod` будет показывать что все поды ready
+- Находим ip docker контейнеров:
+  - `docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' kind-a-control-plane`
+  - `docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' kind-b-control-plane`
+- Настраиваем BGP:
+  - в файл cluster-a/bgp.yaml на строке 60 прописываем IP контейнера kind-a-control-plane
+  - в файл cluster-b/bgp.yaml на строке 60 прописываем IP контейнера kind-b-control-plane
+  - `kubectl apply -f cluster-a/bgp.yaml` в контексте kind-a
+  - `kubectl apply -f cluster-b/bgp.yaml` в контексте kind-b
+- Заливаем демо поды:
+  - `kubectl apply -f cluster-a/pod.yaml` в контексте kind-a
+  - `kubectl apply -f cluster-b/pod.yaml` в контексте kind-b
+- Проверяем в бразуере на локалхосте:
+  - http://nginx.default.svc.kind-a.cluster.local/
+  - http://nginx.default.svc.kind-b.cluster.local/

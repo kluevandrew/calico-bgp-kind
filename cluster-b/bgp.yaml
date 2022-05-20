@@ -1,0 +1,60 @@
+### Make calico use IPIP when reaching remote pod network
+---
+apiVersion: crd.projectcalico.org/v1
+kind: IPPool
+metadata:
+  name: ippool-of-cluster-a
+spec:
+  cidr: 10.201.0.0/16  # podCIDR used in cluster A
+  ipipMode: CrossSubnet
+  disabled: true       # 'disabled' option has effect for IP assignment purposes only
+---
+apiVersion: crd.projectcalico.org/v1
+kind: IPPool
+metadata:
+  name: ippool-svc-cidr-b
+spec:
+  cidr: 10.101.0.0/16
+  ipipMode: CrossSubnet
+  disabled: true
+
+### Configure calico AS number
+---
+apiVersion: crd.projectcalico.org/v1
+kind: BGPConfiguration
+metadata:
+  name: default
+spec:
+  logSeverityScreen: Debug
+  nodeToNodeMeshEnabled: true
+  # MUST BE UNIQUE PER CLUSTER:
+  # - default (no config): 64512
+  # - A: 64513
+  # - B: 64514
+  asNumber: 64514
+  serviceClusterIPs:
+    - cidr: 10.102.0.0/16
+
+### Configure peering between master nodes
+# calico-bgppeers.yaml
+#
+# Naming convention is: 'edge-peer-$REMOTE_NODE_NAME'
+#
+# Config below makes use of label 'edge'
+#  on Calico Node objects.
+# IMPORTANT: for peering to work, you must:
+#  1. ensure that TCP port 179 works between
+#     peering nodes
+#  2. any BGPPeer config is symmetric:
+#     if you peer with node, that node
+#     MUST peer with you
+#
+---
+apiVersion: crd.projectcalico.org/v1
+kind: BGPPeer
+metadata:
+  name: edge-peer-cluster-a-master-0
+spec:
+  peerIP: 172.17.0.3   # IP of node1 in cluster A (remote cluster) nslookup kind-a-control-plane
+  asNumber: 64513      # AS used in cluster A (remote cluster)
+  keepOriginalNextHop: true

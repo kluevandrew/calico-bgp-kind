@@ -1,0 +1,21 @@
+---
+apiVersion: crd.projectcalico.org/v1
+kind: FelixConfiguration
+metadata:
+  name: default
+spec:
+  ipipEnabled: true
+  ipipMTU: 1400
+
+---
+apiVersion: crd.projectcalico.org/v1
+kind: CalicoNodeStatus
+metadata:
+  name: caliconodestatus
+spec:
+  classes:
+    - Agent
+    - BGP
+    - Routes
+  node: kind-b-control-plane
+  updatePeriodSeconds: 10
